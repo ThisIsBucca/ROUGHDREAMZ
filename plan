@@ -1,0 +1,74 @@
+roughdreamz WhatsApp Bot - Plan
+=================================
+
+PURPOSE
+-------
+Baileys-based WhatsApp bot that reads schedule messages from WhatsApp groups,
+parses them (AI + regex fallback), and auto-upserts them into the Supabase
+`schedules` table — replacing the manual copy-paste workflow.
+
+HOW IT WORKS
+------------
+1. Connect via WhatsApp Web protocol using Baileys library
+2. Listens for new messages in groups (@g.us)
+3. On receiving a text message, runs AI parsing (Gemini → OpenRouter)
+4. If AI fails, falls back to regex-based Swahili schedule parser
+5. Upserts parsed schedule into Supabase `schedules` table
+6. Replies to the group with a confirmation in Swahili
+7. Auth persists via auth_info/ folder (QR scan once)
+
+Unlike the Meta Cloud API webhook (which requires a public HTTPS endpoint),
+this bot connects directly via WhatsApp Web — no hosting needed.
+
+FILES
+-----
+index.js                   - Main bot entry point
+package.json               - Dependencies & scripts
+.env                       - Environment variables (keys, URLs)
+plan                       - This file
+src/
+├── parseScheduleMessage.js - Regex-based Swahili ferry schedule parser
+├── parseWithAI.js          - AI parser (Gemini → OpenRouter fallback)
+└── supabaseAdmin.js        - Supabase admin client (bypasses RLS)
+
+ENVIRONMENT VARIABLES (.env)
+----------------------------
+NEXT_PUBLIC_SUPABASE_URL   - Supabase project URL
+SUPABASE_SERVICE_ROLE_KEY  - Supabase service role key (bypasses RLS)
+GEMINI_API_KEY             - Google Gemini API key
+OPENROUTER_API_KEY         - OpenRouter API key (fallback AI)
+
+Optional:
+TARGET_GROUP_JID           - Only process messages from this group JID
+LOG_LEVEL                  - Pino log level (default: info)
+
+RUNNING
+-------
+npm start       # normal
+npm run dev     # with --watch (auto-restart on file changes)
+
+On first run, a QR code will print in the terminal.
+Scan it with WhatsApp (Linked Devices) to authenticate.
+The session persists in auth_info/ folder.
+
+SCHEDULES TABLE (Supabase)
+--------------------------
+ship_name  - e.g. "MV Kilindoni"
+route      - e.g. "Mafia Island - Nyamisati"
+days       - e.g. "Monday" (English)
+date       - YYYY-MM-DD
+departure  - HH:MM (24hr)
+arrival    - HH:MM (24hr)
+duration   - e.g. "5 hours"
+notes      - weather disclaimers or extra info
+
+KEY DIFFERENCES FROM WEBHOOK
+----------------------------
+Webhook (Meta API)              | Baileys Bot
+--------------------------------|-------------------------------
+Requires public HTTPS endpoint  | Runs locally, connects via WhatsApp Web
+Triggered by Meta POST request  | Listens to messages in real-time
+Uses WHATSAPP_TOKEN / PHONE_ID  | Uses QR scan authentication
+Can only read messages          | Can read ALL group messages
+Meta Cloud API (official)       | WhatsApp Web protocol (unofficial)
+sendTextMessage via Graph API   | sock.sendMessage (direct)
