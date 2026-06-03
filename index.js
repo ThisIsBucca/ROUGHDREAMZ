@@ -6,6 +6,16 @@ import {
     Browsers,
 } from '@whiskeysockets/baileys'
 import pino from 'pino'
+import http from 'node:http'
+
+const PORT = process.env.PORT || 10000
+
+http.createServer((_req, res) => {
+    res.writeHead(200, { 'Content-Type': 'text/plain' })
+    res.end('WhatsApp bot is running')
+}).listen(PORT, () => {
+    console.log(`✅ Health server listening on port ${PORT}`)
+})
 
 const TARGET_GROUP_SUBJECT = process.env.TARGET_GROUP_SUBJECT
 const BOT_PHONE_NUMBER = process.env.BOT_PHONE_NUMBER || '255778286840'
