@@ -17,28 +17,38 @@ http.createServer((_req, res) => {
     console.log(`✅ Health server listening on port ${PORT}`)
 })
 
-const TARGET_GROUP_SUBJECT = process.env.TARGET_GROUP_SUBJECT
+const RAW_TARGETS = (process.env.TARGET_GROUP_SUBJECTS || '').split(',').map(s => s.trim()).filter(Boolean)
 const BOT_PHONE_NUMBER = process.env.BOT_PHONE_NUMBER || '255778286840'
 const FORWARD_TO_NUMBER = process.env.FORWARD_TO_NUMBER || '255776986840'
 
 const logger = pino({ level: 'silent' })
 
-let targetGroupJid = null
+let targetGroups = [] // [{ jid, subject }]
 
-async function resolveGroupJid(sock) {
-    if (!TARGET_GROUP_SUBJECT) return null
+async function resolveTargetGroups(sock) {
+    if (!RAW_TARGETS.length) return []
     try {
         const groups = await sock.groupFetchAllParticipating()
+        const found = []
         for (const [jid, metadata] of Object.entries(groups)) {
-            if (metadata.subject?.toLowerCase() === TARGET_GROUP_SUBJECT.toLowerCase()) {
-                return jid
+            const match = RAW_TARGETS.find(
+                t => t.toLowerCase() === metadata.subject?.toLowerCase()
+            )
+            if (match) {
+                found.push({ jid, subject: metadata.subject })
             }
         }
-        console.log(`❌ No group found with subject "${TARGET_GROUP_SUBJECT}"`)
+        if (found.length < RAW_TARGETS.length) {
+            const missing = RAW_TARGETS.filter(
+                t => !found.some(f => f.subject.toLowerCase() === t.toLowerCase())
+            )
+            console.log(`⚠️ Could not find group(s): ${missing.join(', ')}`)
+        }
+        return found
     } catch (err) {
         console.error('❌ Failed to fetch groups:', err.message)
     }
-    return null
+    return []
 }
 
 async function startBot() {
@@ -79,9 +89,9 @@ async function startBot() {
 
         if (connection === 'open') {
             console.log('✅ Connected to WhatsApp successfully!')
-            targetGroupJid = await resolveGroupJid(sock)
-            if (targetGroupJid) {
-                console.log(`👀 Monitoring group: "${TARGET_GROUP_SUBJECT}"`)
+            targetGroups = await resolveTargetGroups(sock)
+            if (targetGroups.length) {
+                console.log(`👀 Monitoring groups: ${targetGroups.map(g => `"${g.subject}"`).join(', ')}`)
                 console.log(`📨 Forwarding to: ${FORWARD_TO_NUMBER}`)
             }
         }
@@ -105,12 +115,15 @@ async function startBot() {
                 if (!msg.message) continue
                 const jid = msg.key.remoteJid
                 if (!jid?.endsWith('@g.us')) continue
-                if (!targetGroupJid || jid !== targetGroupJid) continue
+
+                const group = targetGroups.find(g => g.jid === jid)
+                if (!group) continue
 
                 let text = msg.message.conversation || msg.message.extendedTextMessage?.text
                 if (!text) continue
 
                 const forwardJid = FORWARD_TO_NUMBER.replace(/\D/g, '') + '@s.whatsapp.net'
+                await sock.sendMessage(forwardJid, { text: `[${group.subject}]` })
                 await sock.sendMessage(forwardJid, { text })
             } catch (err) {
                 console.error('❌ Forward error:', err.message)
